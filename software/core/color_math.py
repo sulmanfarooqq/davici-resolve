@@ -45,7 +45,7 @@ def rgb_to_hsv(rgb: np.ndarray) -> np.ndarray:
                  np.where(mx == r, np.mod((g - b) / (d + 1e-10), 6.0),
                  np.where(mx == g, (b - r) / (d + 1e-10) + 2.0,
                                     (r - g) / (d + 1e-10) + 4.0))) * 60.0 / 360.0
-    s = np.where(mx == 0, 0.0, d / mx)
+    s = np.divide(d, mx, out=np.zeros_like(d), where=mx > 0)
     v = mx
     return np.stack([h, s, v], axis=-1)
 

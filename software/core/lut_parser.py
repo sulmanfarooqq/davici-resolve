@@ -52,7 +52,7 @@ def cube_to_lut3d(path: str) -> Optional[np.ndarray]:
     values = np.array(data['values'][:expected], dtype=np.float32)
     if len(values) < expected:
         return None
-    return values.reshape(size, size, size, 3)
+    return values.reshape(size, size, size, 3).transpose(2, 1, 0, 3)
 
 
 def cube_to_lut1d(path: str) -> Optional[np.ndarray]:
@@ -70,9 +70,6 @@ def apply_lut_3d(image: np.ndarray, lut: np.ndarray) -> np.ndarray:
     size = lut.shape[0]
     c = image.astype(np.float32)
     c = np.clip(c, 0.0, 1.0)
-    scale = (size - 1) / size
-    offset = 1.0 / (2.0 * size)
-    c = c * scale + offset
     r, g, b = c[..., 0], c[..., 1], c[..., 2]
     rf = r * (size - 1); gf = g * (size - 1); bf = b * (size - 1)
     r0 = np.clip(np.floor(rf).astype(int), 0, size - 2)

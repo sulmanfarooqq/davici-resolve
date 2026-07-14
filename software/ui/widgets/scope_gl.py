@@ -58,7 +58,6 @@ class ScopeGL(QOpenGLWidget):
         step = max(1, luma.shape[0] // h)
         for row_y in range(0, luma.shape[0], step):
             row = luma[row_y, :]
-            col_step = max(1, len(row) // w)
             for x in range(0, w):
                 col_idx = int(x * len(row) / w)
                 l_val = row[col_idx]
@@ -112,9 +111,9 @@ class ScopeGL(QOpenGLWidget):
         rgb = arr[:,:,:3].astype(np.float32) / 255.0
 
         r, g, b = rgb[:,:,0], rgb[:,:,1], rgb[:,:,2]
-        y = 0.299 * r + 0.587 * g + 0.114 * b
-        cb = 0.564 * (b - y)
-        cr = 0.713 * (r - y)
+        y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+        cb = 0.5389 * (b - y)
+        cr = 0.6350 * (r - y)
 
         painter.setPen(QPen(QColor(60, 180, 60, 100), 1))
         step = max(1, cb.shape[0] * cb.shape[1] // 20000)
@@ -141,9 +140,9 @@ class ScopeGL(QOpenGLWidget):
             (1.0, 0.0, 1.0, 0.5, 0.5),   # M
         ]
         for rr, gg, bb, *_ in color_bar_targets:
-            yy = 0.299 * rr + 0.587 * gg + 0.114 * bb
-            ccb = 0.564 * (bb - yy)
-            ccr = 0.713 * (rr - yy)
+            yy = 0.2126 * rr + 0.7152 * gg + 0.0722 * bb
+            ccb = 0.5389 * (bb - yy)
+            ccr = 0.6350 * (rr - yy)
             tx = int(cx + ccb * radius * 0.75)
             ty = int(cy + ccr * radius * 0.75)
             painter.setPen(QPen(QColor(200, 200, 200), 1))

@@ -93,12 +93,10 @@ def node_levels(image: np.ndarray, channel: int = 0,
     ch_data = np.power(ch_data, gamma)
     ch_data = out_min + ch_data * (out_max - out_min)
     if channel == 0:
-        for i in range(3):
-            result[..., i] = ch_data * get_luminance(result[..., :3]) / (get_luminance(result[..., :3]) + 1e-10)
-            # preserve ratio
         luma = get_luminance(result[..., :3])
         for i in range(3):
-            result[..., i] = np.where(luma > 1e-10, result[..., i] * ch_data / luma, 0)
+            scaled = result[..., i] * ch_data
+            result[..., i] = np.divide(scaled, luma, out=np.zeros_like(scaled), where=luma > 1e-10)
     else:
         result[..., channel - 1] = ch_data
     return np.clip(result, 0.0, 1.0)

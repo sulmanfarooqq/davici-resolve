@@ -1,4 +1,5 @@
 """Interactive curve editor widget."""
+import numpy as np
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt, QRectF, QPointF
 from PySide6.QtGui import QPainter, QPen, QColor, QBrush, QMouseEvent
