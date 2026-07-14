@@ -1,0 +1,31 @@
+# Blender source (read-only reference)
+blender/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp / artifacts
+nul
+
+# Env
+.env
+venv/
+.venv/

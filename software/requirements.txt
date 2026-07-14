@@ -1,0 +1,8 @@
+PySide6>=6.7
+numpy>=1.20
+Pillow>=9.0
+opencv-python>=4.8
+
+# PySide6 is a large download (~250MB). If pip install times out, try:
+#   pip install --default-timeout=600 PySide6
+# Or download the wheel manually from https://pypi.org/project/PySide6/files
