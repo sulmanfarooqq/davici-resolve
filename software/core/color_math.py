@@ -196,6 +196,14 @@ def colorbalance_lgg(in_val: np.ndarray, lift: np.ndarray, gamma_inv: np.ndarray
     x = np.maximum(x, 0.0)
     return srgb_to_linearrgb(np.power(x, gamma_inv))
 
+
+def colorbalance_lgg_rgb(image: np.ndarray, lift_rgb, gamma_inv_rgb, gain_rgb) -> np.ndarray:
+    if image.ndim == 2:
+        return colorbalance_lgg(image, lift_rgb, gamma_inv_rgb, gain_rgb)
+    x = ((linearrgb_to_srgb(image[..., :3]) - 1.0) * (2.0 - np.asarray([lift_rgb])) + 1.0) * np.asarray([gain_rgb])
+    x = np.maximum(x, 0.0)
+    return srgb_to_linearrgb(np.power(x, np.asarray([gamma_inv_rgb])))
+
 # ─── White Point / Temperature / Tint (Blender Bradford adaptation) ───
 
 def whitepoint_from_temp_tint(temperature: float, tint: float) -> np.ndarray:
@@ -238,22 +246,19 @@ def apply_brightness_contrast(image: np.ndarray, brightness: float = 0.0, contra
     else:
         mul = max(1.0 - delta * 2, 0.0)
         add = mul * b + delta
-    c = image.astype(np.float32)
-    c = c * mul + add
-    return np.clip(c, 0.0, 1.0)
+    return np.clip(image * mul + add, 0.0, 1.0)
 
 # ─── Exposure ───
 
 def apply_exposure(image: np.ndarray, exposure: float = 0.0) -> np.ndarray:
-    return image * (2.0 ** exposure)
+    return image * np.float32(2.0 ** exposure)
 
 # ─── Saturation ───
 
 def apply_saturation(image: np.ndarray, saturation: float = 0.0) -> np.ndarray:
     luma = get_luminance(image)
-    result = image.copy().astype(np.float32)
-    for i in range(3):
-        result[..., i] = luma + (result[..., i] - luma) * (1.0 + saturation)
+    factor = 1.0 + saturation
+    result = luma[..., None] + (image[..., :3] - luma[..., None]) * factor
     return np.clip(result, 0.0, 1.0)
 
 # ─── Gamma ───
@@ -300,3 +305,69 @@ def apply_normalize(image: np.ndarray) -> np.ndarray:
     rng = mx - mn
     rng = np.where(rng < 1e-10, 1.0, rng)
     return (image - mn) / rng
+
+
+# ─── Performance: LUT-based grading ───
+
+LGG_LUT_SIZE = 4096
+_LGG_LUT_X = np.linspace(0, 1, LGG_LUT_SIZE, dtype=np.float64)
+
+
+def make_lgg_lut_channel(lift: float, gamma_inv: float, gain: float) -> np.ndarray:
+    y = ((linearrgb_to_srgb(_LGG_LUT_X) - 1.0) * (2.0 - lift) + 1.0) * gain
+    y = np.maximum(y, 0.0)
+    y = srgb_to_linearrgb(np.power(y, gamma_inv))
+    return np.clip(y, 0, 1).astype(np.float32)
+
+
+def apply_lut_1d(channel: np.ndarray, lut: np.ndarray) -> None:
+    idx = np.clip(channel * (len(lut) - 1) + 0.5, 0, len(lut) - 1).astype(np.int32)
+    channel[:] = lut[idx]
+
+
+def apply_lut_1d_fast(channel: np.ndarray, lut: np.ndarray) -> np.ndarray:
+    return lut[np.clip(channel * (len(lut) - 1) + 0.5, 0, len(lut) - 1).astype(np.int32)]
+
+
+class GradingCache:
+    """Caches LGG LUTs. Only rebuilds when parameters actually change."""
+
+    def __init__(self):
+        self._lut_r = None
+        self._lut_g = None
+        self._lut_b = None
+        self._lift = (None, None, None)
+        self._gamma_inv = (None, None, None)
+        self._gain = (None, None, None)
+
+    def _needs_rebuild(self, lift, gamma_inv, gain) -> bool:
+        return (
+            self._lut_r is None
+            or lift != self._lift
+            or gamma_inv != self._gamma_inv
+            or gain != self._gain
+        )
+
+    def get_luts(self, lift_rgb, gamma_inv_rgb, gain_rgb):
+        if self._needs_rebuild(lift_rgb, gamma_inv_rgb, gain_rgb):
+            self._lut_r = make_lgg_lut_channel(lift_rgb[0], gamma_inv_rgb[0], gain_rgb[0])
+            self._lut_g = make_lgg_lut_channel(lift_rgb[1], gamma_inv_rgb[1], gain_rgb[1])
+            self._lut_b = make_lgg_lut_channel(lift_rgb[2], gamma_inv_rgb[2], gain_rgb[2])
+            self._lift = tuple(lift_rgb)
+            self._gamma_inv = tuple(gamma_inv_rgb)
+            self._gain = tuple(gain_rgb)
+        return self._lut_r, self._lut_g, self._lut_b
+
+    def apply_lgg(self, image: np.ndarray, lift_rgb, gamma_inv_rgb, gain_rgb) -> np.ndarray:
+        lut_r, lut_g, lut_b = self.get_luts(lift_rgb, gamma_inv_rgb, gain_rgb)
+        result = image.copy()
+        result[..., 0] = apply_lut_1d_fast(result[..., 0], lut_r)
+        result[..., 1] = apply_lut_1d_fast(result[..., 1], lut_g)
+        result[..., 2] = apply_lut_1d_fast(result[..., 2], lut_b)
+        return result
+
+    def apply_lgg_inplace(self, image: np.ndarray, lift_rgb, gamma_inv_rgb, gain_rgb) -> None:
+        lut_r, lut_g, lut_b = self.get_luts(lift_rgb, gamma_inv_rgb, gain_rgb)
+        apply_lut_1d(image[..., 0], lut_r)
+        apply_lut_1d(image[..., 1], lut_g)
+        apply_lut_1d(image[..., 2], lut_b)

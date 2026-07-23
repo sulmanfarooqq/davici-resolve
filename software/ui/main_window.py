@@ -19,9 +19,9 @@ from core.video_io import VideoReader
 from core.frame_cache import FrameCache
 from core.playback_controller import PlaybackController, PlaybackState
 from core.color_math import (
-    colorbalance_lgg, colorbalance_cdl, apply_brightness_contrast,
+    colorbalance_lgg, colorbalance_lgg_rgb, colorbalance_cdl, apply_brightness_contrast,
     apply_saturation, apply_exposure, apply_gamma, apply_invert,
-    rgb_to_hsv,
+    rgb_to_hsv, GradingCache,
 )
 from core.curves_nodes import node_rgb_curves, node_hue_correct
 from core.lut_parser import parse_cube, cube_to_lut3d, apply_lut_3d
@@ -443,6 +443,8 @@ class MainWindow(QMainWindow):
         self._channel_visible = {'R': True, 'G': True, 'B': True, 'Alpha': True}
         self._pipette_active = False
         self._split_view = False
+        self._grading_cache = GradingCache()
+        self._preview_scale = 0.25
         self.grade_params = {
             'lift': [0.0, 0.0, 0.0], 'gamma': [1.0, 1.0, 1.0],
             'gain': [1.0, 1.0, 1.0], 'offset': [0.0, 0.0, 0.0],
@@ -1125,14 +1127,16 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _apply_grade_to_frame(self, frame: np.ndarray) -> np.ndarray:
-        img = frame.copy().astype(np.float32)
+        img = frame.copy()
         p = self.grade_params
-        for c in range(3):
-            l = p['lift'][c]
-            g = 1.0 / max(p['gamma'][c], 0.001)
-            gn = p['gain'][c]
-            img[:, :, c] = colorbalance_lgg(img[:, :, c], l, g, gn)
-        img[:, :, :3] += np.array(p['offset'])
+        lift = p['lift']
+        gamma_inv = [1.0 / max(p['gamma'][c], 0.001) for c in range(3)]
+        gain = p['gain']
+        if any(abs(lift[i]) > 1e-6 or abs(gamma_inv[i] - 1.0) > 1e-6 or abs(gain[i] - 1.0) > 1e-6 for i in range(3)):
+            self._grading_cache.apply_lgg_inplace(img, lift, gamma_inv, gain)
+        offset = p['offset']
+        if any(abs(offset[i]) > 1e-6 for i in range(3)):
+            img[..., :3] += np.asarray(offset)
         if p['contrast'] != 0.0:
             img = apply_brightness_contrast(img, 0.0, p['contrast'])
         if p['saturation'] != 0.0:
@@ -1344,22 +1348,45 @@ class MainWindow(QMainWindow):
     def _update_grade(self):
         if self.original_frame is None:
             return
-        img = self.original_frame.copy().astype(np.float32)
         p = self.grade_params
 
-        for c in range(3):
-            l = p['lift'][c]
-            g = 1.0 / max(p['gamma'][c], 0.001)
-            gn = p['gain'][c]
-            img[:, :, c] = colorbalance_lgg(img[:, :, c], l, g, gn)
-        img[:, :, :3] += np.array(p['offset'])
+        lift = p['lift']
+        gamma_inv = [1.0 / max(p['gamma'][c], 0.001) for c in range(3)]
+        gain = p['gain']
+        has_lgg = any(abs(lift[i]) > 1e-6 or abs(gamma_inv[i] - 1.0) > 1e-6 or abs(gain[i] - 1.0) > 1e-6 for i in range(3))
+        offset = p['offset']
+        has_offset = any(abs(offset[i]) > 1e-6 for i in range(3))
+        has_contrast = p['contrast'] != 0.0
+        has_saturation = p['saturation'] != 0.0
+        has_exposure = p['exposure'] != 0.0
 
-        if p['contrast'] != 0.0:
+        h, w = self.original_frame.shape[:2]
+        scale = self._preview_scale if (has_lgg or has_saturation or has_contrast or has_exposure) else 1.0
+
+        if scale < 1.0:
+            sh = max(int(h * scale), 1)
+            sw = max(int(w * scale), 1)
+            img = self.original_frame[::max(int(1/scale), 1), ::max(int(1/scale), 1), :].copy()
+        else:
+            img = self.original_frame.copy()
+
+        if has_lgg:
+            self._grading_cache.apply_lgg_inplace(img, lift, gamma_inv, gain)
+
+        if has_offset:
+            img[..., :3] += np.asarray(offset)
+
+        if has_contrast:
             img = apply_brightness_contrast(img, 0.0, p['contrast'])
-        if p['saturation'] != 0.0:
-            img = apply_saturation(img, p['saturation'])
-        if p['exposure'] != 0.0:
-            img = apply_exposure(img, p['exposure'])
+        if has_saturation:
+            luma = img @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+            f = p['saturation']
+            img[..., 0] += f * (img[..., 0] - luma)
+            img[..., 1] += f * (img[..., 1] - luma)
+            img[..., 2] += f * (img[..., 2] - luma)
+            np.clip(img, 0, 1, out=img)
+        if has_exposure:
+            np.multiply(img, np.float32(2.0 ** p['exposure']), out=img)
 
         if self.lut is not None:
             img = apply_lut_3d(img, self.lut)
@@ -1438,7 +1465,13 @@ class MainWindow(QMainWindow):
             display[..., 3] = 1.0
 
         if self._split_view and self.original_frame is not None:
-            self.viewer.set_image_before(self.original_frame)
+            if scale < 1.0:
+                sh = max(int(h * scale), 1)
+                sw = max(int(w * scale), 1)
+                before = self.original_frame[::max(int(1/scale), 1), ::max(int(1/scale), 1), :]
+            else:
+                before = self.original_frame
+            self.viewer.set_image_before(before)
         self.viewer.set_image(display)
 
     def _update_scopes(self):
