@@ -88,3 +88,125 @@ def test_pixelate():
     assert r.shape == img.shape
     # Check that blocks are uniform
     assert np.allclose(r[0:5, 0:5], r[0, 0], atol=1e-6)
+
+
+# ─── New nodes ───
+
+def test_shadows_highlights_identity():
+    img = np.random.rand(10, 10, 3).astype(np.float32)
+    r = node_shadows_highlights(img, shadows=0.0, highlights=0.0)
+    assert r.shape == img.shape
+    assert np.all((r >= 0) & (r <= 1))
+
+def test_shadows_highlights_shadows():
+    img = np.random.rand(10, 10, 3).astype(np.float32)
+    r = node_shadows_highlights(img, shadows=0.5)
+    assert r.shape == img.shape
+    assert np.all((r >= 0) & (r <= 1))
+
+def test_shadows_highlights_highlights():
+    img = np.random.rand(10, 10, 3).astype(np.float32)
+    r = node_shadows_highlights(img, highlights=0.5)
+    assert r.shape == img.shape
+    assert np.all((r >= 0) & (r <= 1))
+
+def test_color_temperature_identity():
+    img = np.random.rand(10, 10, 3).astype(np.float32)
+    r = node_color_temperature(img, temperature=6500, tint=0)
+    assert r.shape == img.shape
+    assert np.all((r >= 0) & (r <= 1))
+
+def test_color_temperature_warm():
+    img = np.random.rand(10, 10, 3).astype(np.float32)
+    r = node_color_temperature(img, temperature=3000)
+    assert r.shape == img.shape
+    assert np.all((r >= 0) & (r <= 1))
+
+def test_color_temperature_cool():
+    img = np.random.rand(10, 10, 3).astype(np.float32)
+    r = node_color_temperature(img, temperature=9000)
+    assert r.shape == img.shape
+    assert np.all((r >= 0) & (r <= 1))
+
+def test_split_toning_identity():
+    img = np.random.rand(10, 10, 3).astype(np.float32)
+    r = node_split_toning(img, balance=0.0, factor=0.0)
+    assert r.shape == img.shape
+    assert np.all((r >= 0) & (r <= 1))
+
+def test_split_toning_apply():
+    img = np.random.rand(10, 10, 3).astype(np.float32)
+    r = node_split_toning(img, shadow_color=(0.4, 0.4, 0.8), highlight_color=(0.8, 0.6, 0.4), factor=1.0)
+    assert r.shape == img.shape
+    assert np.all((r >= 0) & (r <= 1))
+
+def test_vignette_identity():
+    img = np.ones((20, 20, 3), dtype=np.float32)
+    r = node_vignette(img, strength=0.0)
+    assert r.shape == img.shape
+    assert np.allclose(r, 1.0, atol=1e-5)
+
+def test_vignette_darkens_edges():
+    img = np.ones((20, 20, 3), dtype=np.float32)
+    r = node_vignette(img, strength=1.0, size=0.3)
+    assert r.shape == img.shape
+    # Center should be brighter than edges
+    assert r[10, 10, 0] > r[0, 0, 0]
+
+def test_film_grain_identity():
+    img = np.random.rand(20, 20, 3).astype(np.float32)
+    r = node_film_grain(img, amount=0.0)
+    assert r.shape == img.shape
+
+def test_film_grain_adds_noise():
+    img = np.full((20, 20, 3), 0.5, dtype=np.float32)
+    r = node_film_grain(img, amount=1.0, seed=42)
+    assert r.shape == img.shape
+    assert not np.allclose(r, 0.5)
+
+def test_blur_identity():
+    img = np.random.rand(20, 20, 3).astype(np.float32)
+    r = node_blur(img, size=1)
+    assert r.shape == img.shape
+    assert np.allclose(r, img)
+
+def test_blur_smooths():
+    img = np.zeros((20, 20, 3), dtype=np.float32)
+    img[10, 10] = [1.0, 1.0, 1.0]
+    r = node_blur(img, size=7, sigma=2.0)
+    assert r.shape == img.shape
+    assert np.all((r >= 0) & (r <= 1))
+    # After blur, center pixel should be less than 1.0
+    assert r[10, 10, 0] < 1.0
+    # Neighboring pixels should have some brightness
+    assert r[10, 11, 0] > 0
+
+def test_glow_identity():
+    img = np.full((20, 20, 3), 0.1, dtype=np.float32)
+    r = node_glow(img, threshold=0.8, intensity=0.0)
+    assert r.shape == img.shape
+    assert np.allclose(r, 0.1, atol=1e-5)
+
+def test_glow_bright():
+    img = np.ones((20, 20, 3), dtype=np.float32)
+    r = node_glow(img, threshold=0.5, intensity=1.0, size=5)
+    assert r.shape == img.shape
+    assert np.all((r >= 0) & (r <= 1))
+    assert r[10, 10, 0] > 1.0 - 1e-6
+
+def test_sharpen_identity():
+    img = np.random.rand(20, 20, 3).astype(np.float32)
+    r = node_sharpen(img, amount=0.0)
+    assert np.allclose(r, img, atol=1e-5)
+
+def test_sharpen_enhances():
+    img = np.random.rand(20, 20, 3).astype(np.float32)
+    r = node_sharpen(img, amount=2.0, radius=1.0)
+    assert r.shape == img.shape
+    assert np.all((r >= 0) & (r <= 1))
+
+def test_sharpen_with_threshold():
+    img = np.random.rand(20, 20, 3).astype(np.float32)
+    r = node_sharpen(img, amount=1.0, radius=1.0, threshold=0.5)
+    assert r.shape == img.shape
+    assert np.all((r >= 0) & (r <= 1))

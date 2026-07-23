@@ -41,6 +41,7 @@ from nodes import NODE_CLASSES
 
 class ViewerGL(QWidget):
     cursor_moved = Signal(int, int, float, float, float)
+    color_picked = Signal(float, float, float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -53,6 +54,8 @@ class ViewerGL(QWidget):
         self._pan_y = 0.0
         self._dragging = False
         self._drag_start = None
+        self._tracker_bbox = None
+        self._pipette_mode = False
         self.setMouseTracking(True)
 
     def set_image(self, rgb_array: np.ndarray):
@@ -89,6 +92,12 @@ class ViewerGL(QWidget):
             painter.translate(self._pan_x, self._pan_y)
             painter.scale(self._zoom, self._zoom)
             painter.drawPixmap(0, 0, self._pixmap)
+            if self._tracker_bbox is not None:
+                x, y, w, h = self._tracker_bbox
+                pen = QPen(QColor(0, 255, 0), 2)
+                painter.setPen(pen)
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRect(int(x), int(y), int(w), int(h))
             painter.restore()
 
     def wheelEvent(self, event):
@@ -100,6 +109,21 @@ class ViewerGL(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
+            if self._pipette_mode and self._frame_array is not None and self._pixmap is not None:
+                pw = self._pixmap.width()
+                ph = self._pixmap.height()
+                img_x = int((event.pos().x() - self._pan_x) / self._zoom)
+                img_y = int((event.pos().y() - self._pan_y) / self._zoom)
+                h, w = self._frame_array.shape[:2]
+                fx = int(img_x * w / pw) if pw > 0 else 0
+                fy = int(img_y * h / ph) if ph > 0 else 0
+                fx = max(0, min(fx, w - 1))
+                fy = max(0, min(fy, h - 1))
+                r, g, b = self._frame_array[fy, fx, :3]
+                self.color_picked.emit(float(r), float(g), float(b))
+                self._pipette_mode = False
+                self.setCursor(Qt.ArrowCursor)
+                return
             self._dragging = True
             self._drag_start = (event.pos().x(), event.pos().y())
         elif event.button() == Qt.RightButton:
@@ -130,6 +154,17 @@ class ViewerGL(QWidget):
 
     def mouseReleaseEvent(self, event):
         self._dragging = False
+
+    def set_tracker_bbox(self, bbox):
+        self._tracker_bbox = bbox
+        self.update()
+
+    def set_pipette_mode(self, enabled=True):
+        self._pipette_mode = enabled
+        if enabled:
+            self.setCursor(Qt.CrossCursor)
+        else:
+            self.setCursor(Qt.ArrowCursor)
 
 
 class ColorWheelWidget(QWidget):
@@ -228,6 +263,9 @@ class MainWindow(QMainWindow):
         self.current_frame = None
         self.original_frame = None
         self.current_project_path = None
+        self.current_lut_path = None
+        self._channel_visible = {'R': True, 'G': True, 'B': True, 'Alpha': True}
+        self._pipette_active = False
         self.grade_params = {
             'lift': [0.0, 0.0, 0.0], 'gamma': [1.0, 1.0, 1.0],
             'gain': [1.0, 1.0, 1.0], 'offset': [0.0, 0.0, 0.0],
@@ -258,6 +296,7 @@ class MainWindow(QMainWindow):
         v_layout.setSpacing(2)
         self.viewer = ViewerGL()
         self.viewer.cursor_moved.connect(self._on_cursor_moved)
+        self.viewer.color_picked.connect(self._on_color_picked)
         v_layout.addWidget(self.viewer, 1)
         vt = QHBoxLayout()
         for text, slot in [("Fit", self._fit_viewer), ("1:1", self._zoom_100),
@@ -269,6 +308,11 @@ class MainWindow(QMainWindow):
             setattr(self, f'_ch_{text.lower()}', btn)
             btn.clicked.connect(slot)
             vt.addWidget(btn)
+        self._pipette_btn = QPushButton("Pick")
+        self._pipette_btn.setFixedHeight(24)
+        self._pipette_btn.setCheckable(True)
+        self._pipette_btn.clicked.connect(self._toggle_pipette)
+        vt.addWidget(self._pipette_btn)
         v_layout.addLayout(vt)
         top_split.addWidget(viewer_container)
 
@@ -530,8 +574,13 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.addWidget(QLabel("Open FX Browser"))
-        for name in ["Blur", "Glow", "Sharpen", "Vignette", "Film Grain"]:
-            layout.addWidget(QPushButton(name))
+        for name in ["Blur", "Glow", "Sharpen", "Vignette", "Film Grain",
+                      "Shadows/Highlights", "Split Toning", "Color Temperature"]:
+            btn = QPushButton(name)
+            btn.setStyleSheet("""QPushButton { background-color: #333; color: #888; border: 1px solid #444;
+                border-radius: 4px; padding: 6px 10px; font-size: 12px; }
+                QPushButton:hover { background-color: #444; color: #aaa; }""")
+            layout.addWidget(btn)
         layout.addStretch()
         return tab
 
@@ -581,6 +630,9 @@ class MainWindow(QMainWindow):
 
     def _on_track_data(self, data):
         self.status_label.setText(f"Tracker: {len(data)} points tracked")
+        if data and len(data) > 0:
+            bbox = data[-1][1]
+            self.viewer.set_tracker_bbox(bbox)
 
     def _on_gallery_still_loaded(self, frame, grade):
         self.original_frame = frame.copy().astype(np.float32)
@@ -589,6 +641,7 @@ class MainWindow(QMainWindow):
 
     def _on_lut_browser_applied(self, lut):
         self.lut = lut
+        self.current_lut_path = getattr(lut, 'path', None)
         self.status_label.setText("LUT applied from browser")
         self._update_grade()
 
@@ -603,13 +656,36 @@ class MainWindow(QMainWindow):
         })
 
     def _toggle_red(self):
-        pass
+        self._channel_visible['R'] = not self._channel_visible['R']
+        self._update_grade()
+
     def _toggle_green(self):
-        pass
+        self._channel_visible['G'] = not self._channel_visible['G']
+        self._update_grade()
+
     def _toggle_blue(self):
-        pass
+        self._channel_visible['B'] = not self._channel_visible['B']
+        self._update_grade()
+
     def _toggle_alpha(self):
-        pass
+        self._channel_visible['Alpha'] = not self._channel_visible['Alpha']
+        self._update_grade()
+
+    def _toggle_pipette(self):
+        self._pipette_active = not self._pipette_active
+        self._pipette_btn.setChecked(self._pipette_active)
+        self.viewer.set_pipette_mode(self._pipette_active)
+
+    def _on_color_picked(self, r, g, b):
+        self._pipette_active = False
+        self._pipette_btn.setChecked(False)
+        hsv = rgb_to_hsv(np.array([[[r, g, b]]]))[0, 0]
+        self.info_panel.update_cursor_info({
+            'position': 'Picked',
+            'rgb': f"({r:.3f}, {g:.3f}, {b:.3f})",
+            'hsv': f"({hsv[0]:.3f}, {hsv[1]:.3f}, {hsv[2]:.3f})",
+        })
+        self.status_label.setText(f"Color picked: RGB({r:.3f}, {g:.3f}, {b:.3f})")
 
     # ─── Project ───
 
@@ -659,6 +735,7 @@ class MainWindow(QMainWindow):
                 contrast=self.grade_params['contrast'],
                 saturation=self.grade_params['saturation'],
                 exposure=self.grade_params['exposure'],
+                lut_path=self.current_lut_path,
             ),
             node_graph=self.node_graph.to_dict() if self.node_graph.nodes else None,
         )
@@ -679,6 +756,11 @@ class MainWindow(QMainWindow):
             'offset': g.offset, 'contrast': g.contrast,
             'saturation': g.saturation, 'exposure': g.exposure,
         })
+        if g.lut_path and os.path.exists(g.lut_path):
+            lut = cube_to_lut3d(g.lut_path)
+            if lut is not None:
+                self.lut = lut
+                self.current_lut_path = g.lut_path
         if project.node_graph:
             self.node_graph = NodeGraph.from_dict(project.node_graph, NODE_CLASSES)
             self.node_editor.rebuild()
@@ -704,7 +786,7 @@ class MainWindow(QMainWindow):
         ))
 
     def _get_lut_path(self):
-        return None
+        return self.current_lut_path
 
     def _undo(self):
         snap = self.undo_manager.undo()
@@ -718,6 +800,15 @@ class MainWindow(QMainWindow):
 
     def _restore_snapshot(self, snap: GradeSnapshot):
         self.grade_params.update(snap.grade_params)
+        if snap.lut_path != self.current_lut_path:
+            if snap.lut_path and os.path.exists(snap.lut_path):
+                lut = cube_to_lut3d(snap.lut_path)
+                if lut is not None:
+                    self.lut = lut
+                    self.current_lut_path = snap.lut_path
+            elif snap.lut_path is None:
+                self.lut = None
+                self.current_lut_path = None
         self._update_grade()
 
     # ─── Media loading ───
@@ -776,6 +867,7 @@ class MainWindow(QMainWindow):
         lut = cube_to_lut3d(path)
         if lut is not None:
             self.lut = lut
+            self.current_lut_path = path
             self.status_label.setText(f"LUT loaded: {os.path.basename(path)}")
             self._update_grade()
         else:
@@ -809,7 +901,16 @@ class MainWindow(QMainWindow):
             if mask is not None and mask.max() > 0:
                 img = img * (1.0 - mask[:,:,None]) + self.original_frame * mask[:,:,None]
         self.current_frame = np.clip(img, 0.0, 1.0)
-        self.viewer.set_image(self.current_frame)
+        display = self.current_frame.copy()
+        if not self._channel_visible['R']:
+            display[..., 0] = 0
+        if not self._channel_visible['G']:
+            display[..., 1] = 0
+        if not self._channel_visible['B']:
+            display[..., 2] = 0
+        if not self._channel_visible['Alpha'] and display.shape[-1] >= 4:
+            display[..., 3] = 1.0
+        self.viewer.set_image(display)
 
     def _update_scopes(self):
         if self.current_frame is None:
@@ -856,6 +957,7 @@ class MainWindow(QMainWindow):
     def _reset_all(self):
         self._reset_grade()
         self.lut = None
+        self.current_lut_path = None
         if self.original_frame is not None:
             self.current_frame = self.original_frame.copy()
             self.viewer.set_image(self.current_frame)

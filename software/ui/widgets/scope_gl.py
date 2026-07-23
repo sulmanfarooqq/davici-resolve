@@ -1,12 +1,17 @@
-"""Waveform / vectorscope / histogram scope widget using QOpenGLWidget."""
+"""Waveform / vectorscope / histogram scope widget using QPainter."""
 
 import numpy as np
-from PySide6.QtWidgets import QOpenGLWidget
+try:
+    from PySide6.QtWidgets import QOpenGLWidget
+    _ScopeBase = QOpenGLWidget
+except ImportError:
+    from PySide6.QtWidgets import QWidget
+    _ScopeBase = QWidget
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter, QColor, QPen, QFont
 
 
-class ScopeGL(QOpenGLWidget):
+class ScopeGL(_ScopeBase):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._mode = 'waveform'

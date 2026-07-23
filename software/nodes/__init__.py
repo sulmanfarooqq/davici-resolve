@@ -18,6 +18,9 @@ from core.additional_nodes import (
     node_alpha_over, node_alpha_set,
     node_levels, node_combine_color, node_separate_color,
     node_convert_colorspace, node_pixelate,
+    node_shadows_highlights, node_color_temperature,
+    node_split_toning, node_vignette, node_film_grain,
+    node_blur, node_glow, node_sharpen,
 )
 from core.blend_modes import blend, BLEND_MODES
 
@@ -215,6 +218,97 @@ class PixelateNode(Node):
         return node_pixelate(img, **self.params)
 
 
+class ShadowsHighlightsNode(Node):
+    def __init__(self, label=""):
+        super().__init__("shadows_highlights", label)
+        self.inputs = [Socket("Image", "color")]
+        self.outputs = [Socket("Image", "color")]
+        self.params = {'shadows': 0.0, 'highlights': 0.0, 'shadow_tone': 0.5,
+                       'highlight_tone': 0.5, 'color_correction': 0.0}
+    def process(self, inputs):
+        img = inputs.get("Image", np.zeros((1,1,3)))
+        return node_shadows_highlights(img, **self.params)
+
+
+class ColorTemperatureNode(Node):
+    def __init__(self, label=""):
+        super().__init__("color_temperature", label)
+        self.inputs = [Socket("Image", "color")]
+        self.outputs = [Socket("Image", "color")]
+        self.params = {'temperature': 6500.0, 'tint': 0.0}
+    def process(self, inputs):
+        img = inputs.get("Image", np.zeros((1,1,3)))
+        return node_color_temperature(img, **self.params)
+
+
+class SplitToningNode(Node):
+    def __init__(self, label=""):
+        super().__init__("split_toning", label)
+        self.inputs = [Socket("Image", "color")]
+        self.outputs = [Socket("Image", "color")]
+        self.params = {'shadow_color': (0.5, 0.5, 0.6), 'highlight_color': (0.6, 0.5, 0.4),
+                       'balance': 0.0, 'factor': 1.0}
+    def process(self, inputs):
+        img = inputs.get("Image", np.zeros((1,1,3)))
+        return node_split_toning(img, **self.params)
+
+
+class VignetteNode(Node):
+    def __init__(self, label=""):
+        super().__init__("vignette", label)
+        self.inputs = [Socket("Image", "color")]
+        self.outputs = [Socket("Image", "color")]
+        self.params = {'strength': 0.5, 'size': 0.8, 'feather': 0.4,
+                       'center_x': 0.5, 'center_y': 0.5}
+    def process(self, inputs):
+        img = inputs.get("Image", np.zeros((1,1,3)))
+        return node_vignette(img, **self.params)
+
+
+class FilmGrainNode(Node):
+    def __init__(self, label=""):
+        super().__init__("film_grain", label)
+        self.inputs = [Socket("Image", "color")]
+        self.outputs = [Socket("Image", "color")]
+        self.params = {'amount': 0.1, 'size': 1.0, 'seed': 0}
+    def process(self, inputs):
+        img = inputs.get("Image", np.zeros((1,1,3)))
+        return node_film_grain(img, **self.params)
+
+
+class BlurNode(Node):
+    def __init__(self, label=""):
+        super().__init__("blur", label)
+        self.inputs = [Socket("Image", "color")]
+        self.outputs = [Socket("Image", "color")]
+        self.params = {'size': 5, 'sigma': 1.0}
+    def process(self, inputs):
+        img = inputs.get("Image", np.zeros((1,1,3)))
+        return node_blur(img, **self.params)
+
+
+class GlowNode(Node):
+    def __init__(self, label=""):
+        super().__init__("glow", label)
+        self.inputs = [Socket("Image", "color")]
+        self.outputs = [Socket("Image", "color")]
+        self.params = {'threshold': 0.8, 'softness': 0.5, 'intensity': 0.5, 'size': 21}
+    def process(self, inputs):
+        img = inputs.get("Image", np.zeros((1,1,3)))
+        return node_glow(img, **self.params)
+
+
+class SharpenNode(Node):
+    def __init__(self, label=""):
+        super().__init__("sharpen", label)
+        self.inputs = [Socket("Image", "color")]
+        self.outputs = [Socket("Image", "color")]
+        self.params = {'amount': 1.0, 'radius': 1.0, 'threshold': 0.0}
+    def process(self, inputs):
+        img = inputs.get("Image", np.zeros((1,1,3)))
+        return node_sharpen(img, **self.params)
+
+
 NODE_CLASSES = {
     "color_balance_lgg": ColorBalanceLGGNode,
     "color_balance_cdl": ColorBalanceCDLNode,
@@ -233,6 +327,14 @@ NODE_CLASSES = {
     "color_spill": ColorSpillNode,
     "blend": BlendNode,
     "pixelate": PixelateNode,
+    "shadows_highlights": ShadowsHighlightsNode,
+    "color_temperature": ColorTemperatureNode,
+    "split_toning": SplitToningNode,
+    "vignette": VignetteNode,
+    "film_grain": FilmGrainNode,
+    "blur": BlurNode,
+    "glow": GlowNode,
+    "sharpen": SharpenNode,
 }
 
 
