@@ -3,7 +3,7 @@ Ported from Blender's node graph execution model.
 """
 
 import numpy as np
-from typing import Dict, List, Optional, Callable, Any
+from typing import Dict, List, Optional, Any
 from uuid import uuid4
 
 
@@ -68,10 +68,40 @@ class NodeGraph:
                     inputs[to_sock] = src._cached_output
         return inputs
 
-    def execute(self) -> Optional[np.ndarray]:
-        # Topological sort
+    def _has_cycle(self) -> bool:
+        WHITE, GRAY, BLACK = 0, 1, 2
+        color = {nid: WHITE for nid in self.nodes}
+
+        def dfs(nid):
+            color[nid] = GRAY
+            for from_id, _, to_id, _ in self.edges:
+                if to_id == nid and from_id in color:
+                    if color[from_id] == GRAY:
+                        return True
+                    if color[from_id] == WHITE and dfs(from_id):
+                        return True
+            color[nid] = BLACK
+            return False
+
+        for nid in self.nodes:
+            if color[nid] == WHITE and dfs(nid):
+                return True
+        return False
+
+    def mark_all_dirty(self):
+        for node in self.nodes.values():
+            node.dirty = True
+
+    def execute(self, input_image: np.ndarray = None) -> Optional[np.ndarray]:
+        if not self.nodes:
+            return input_image
+
+        if self._has_cycle():
+            return input_image
+
         visited = set()
         order = []
+
         def dfs(nid):
             if nid in visited:
                 return
@@ -80,9 +110,11 @@ class NodeGraph:
                 if to_id == nid:
                     dfs(from_id)
             order.append(nid)
+
         for nid in self.nodes:
             dfs(nid)
-        # Execute in order
+
+        result = input_image
         for nid in order:
             node = self.nodes[nid]
             if not node.enabled:
@@ -93,26 +125,16 @@ class NodeGraph:
             if not node.dirty and node._cached_output is not None:
                 continue
             inputs = self.get_inputs(nid)
-            node._cached_output = node.process(inputs)
+            if 'Image' not in inputs and result is not None:
+                inputs['Image'] = result
+            try:
+                node._cached_output = node.process(inputs)
+                result = node._cached_output
+            except Exception:
+                node._cached_output = None
             node.dirty = False
-        # Find output node (last in order)
-        if order:
-            last = self.nodes[order[-1]]
-            return last._cached_output
-        return None
 
-    def from_dict(self, data: dict):
-        self.nodes.clear()
-        self.edges.clear()
-        for nd in data.get('nodes', []):
-            node = Node(nd['type'], nd.get('label', ''))
-            node.id = nd['id']
-            node.params = nd.get('params', {}).copy()
-            node.bypass = nd.get('bypass', False)
-            node.enabled = nd.get('enabled', True)
-            self.nodes[node.id] = node
-        for edge in data.get('edges', []):
-            self.edges.append(tuple(edge))
+        return result
 
     def to_dict(self) -> dict:
         return {
@@ -131,7 +153,9 @@ class NodeGraph:
                 continue
             node = ncls(nd.get('label', ''))
             node.id = nd.get('id', node.id)
-            node.params = nd.get('params', {})
+            params = nd.get('params', {})
+            if params:
+                node.params.update(params)
             node.bypass = nd.get('bypass', False)
             node.enabled = nd.get('enabled', True)
             graph.add_node(node)

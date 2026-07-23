@@ -36,6 +36,8 @@ class Project:
     grade: GradeParams = field(default_factory=GradeParams)
     node_graph: Optional[Dict[str, Any]] = None
     panel_layout: Dict[str, Any] = field(default_factory=dict)
+    versions: Optional[List[Dict[str, Any]]] = None
+    version_index: int = -1
 
     def save(self, path: str):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -53,6 +55,8 @@ class Project:
             grade=grade,
             node_graph=data.get("node_graph"),
             panel_layout=data.get("panel_layout", {}),
+            versions=data.get("versions"),
+            version_index=data.get("version_index", -1),
         )
 
     def to_dict(self) -> dict:
@@ -67,6 +71,8 @@ class Project:
             grade=grade,
             node_graph=data.get("node_graph"),
             panel_layout=data.get("panel_layout", {}),
+            versions=data.get("versions"),
+            version_index=data.get("version_index", -1),
         )
 
 

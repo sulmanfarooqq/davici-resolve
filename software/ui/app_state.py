@@ -29,3 +29,4 @@ class AppState(QObject):
         self.frame_height: int = 1080
         self.is_playing: bool = False
         self.current_frame_rgb = None
+        self.colorspace: str = "srgb"

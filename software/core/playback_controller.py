@@ -6,7 +6,6 @@ into a bounded queue for lock-free readout by the main thread.
 
 from enum import Enum
 from typing import Optional
-from collections import deque
 import numpy as np
 from PySide6.QtCore import QObject, QThread, Signal, QTimer
 
@@ -28,12 +27,16 @@ class DecodeWorker(QThread):
         self._seek_target = -1
         self._direction = 1
         self._speed = 1.0
+        self._skip_interval = 1
 
     def seek(self, frame_index: int):
+        if self.reader is None or not self.reader.is_open:
+            return
         self._seek_target = max(0, min(frame_index, self.reader.total_frames - 1))
 
     def set_speed(self, speed: float):
-        self._speed = max(0.1, min(speed, 4.0))
+        self._speed = max(0.1, min(speed, 8.0))
+        self._skip_interval = max(1, int(self._speed))
 
     def run(self):
         self._running = True
@@ -43,19 +46,25 @@ class DecodeWorker(QThread):
                 current = self._seek_target
                 self._seek_target = -1
 
+            if self.reader is None or not self.reader.is_open:
+                break
             if current < 0 or current >= self.reader.total_frames:
                 self._running = False
                 break
 
-            if self.cache.get(current) is None:
+            frame = self.cache.get(current)
+            if frame is None:
                 frame = self.reader.read_frame(current)
                 if frame is not None:
                     self.cache.put(current, frame)
-                    self.frame_decoded.emit(current, frame)
+            if frame is not None:
+                self.frame_decoded.emit(current, frame)
 
-            sleep_ms = int(1000.0 / (self.reader.fps * self._speed))
+            base_sleep = 1000.0 / max(self.reader.fps, 1.0)
+            sleep_ms = int(base_sleep / max(self._speed, 0.1))
             self.msleep(max(1, sleep_ms))
-            current += self._direction
+
+            current += self._skip_interval * self._direction
 
             if current >= self.reader.total_frames or current < 0:
                 self._running = False
@@ -125,6 +134,8 @@ class PlaybackController(QObject):
         self.frame_changed.emit(0)
 
     def seek(self, frame_index: int):
+        if not self.reader.is_open:
+            return
         self._current_frame = max(0, min(frame_index, self.reader.total_frames - 1))
         if self._worker and self._worker.isRunning():
             self._worker.seek(self._current_frame)

@@ -62,17 +62,34 @@ class ColorSpace:
         self.transfer = transfer
         self.primaries = primaries
 
+    def _apply_transfer(self, rgb: np.ndarray, direction: str) -> np.ndarray:
+        out = rgb.copy()
+        if self.transfer == "srgb" and direction == "forward":
+            from core.color_space import srgb_transfer_forward
+            out[..., :3] = srgb_transfer_forward(out[..., :3])
+        elif self.transfer == "srgb" and direction == "inverse":
+            from core.color_space import srgb_transfer_inverse
+            out[..., :3] = srgb_transfer_inverse(out[..., :3])
+        return out
+
     def convert_to(self, rgb: np.ndarray, target: 'ColorSpace') -> np.ndarray:
         if self == target:
             return rgb
-        xyz = self.to_xyz @ rgb[..., :3, None]
+        out = rgb.copy().astype(np.float64)
+        if self.transfer != target.transfer:
+            if self.transfer == "srgb":
+                out[..., :3] = srgb_transfer_inverse(out[..., :3])
+            elif self.transfer == "linear" and target.transfer == "srgb":
+                pass
+        xyz = self.to_xyz @ out[..., :3, None]
         xyz = xyz[..., 0]
         result = target.from_xyz @ xyz[..., None]
-        out = rgb.copy()
         out[..., :3] = result[..., 0]
-        if self.transfer == target.transfer:
-            return out
-        return out
+        if self.transfer != target.transfer:
+            if target.transfer == "srgb":
+                from core.color_space import srgb_transfer_forward
+                out[..., :3] = srgb_transfer_forward(out[..., :3])
+        return out.astype(np.float32)
 
 
 COLOR_SPACES = {

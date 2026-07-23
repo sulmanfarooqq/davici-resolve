@@ -30,7 +30,7 @@ class ColorBalanceLGGNode(Node):
         super().__init__("color_balance_lgg", label)
         self.inputs = [Socket("Image", "color")]
         self.outputs = [Socket("Image", "color")]
-        self.params = {'lift': [1,1,1], 'gamma': [1,1,1], 'gain': [1,1,1], 'offset': [0,0,0], 'factor': 1.0}
+        self.params = {'lift': [0,0,0], 'gamma': [1,1,1], 'gain': [1,1,1], 'offset': [0,0,0], 'factor': 1.0}
     def process(self, inputs):
         img = inputs.get("Image", np.zeros((1,1,3)))
         return node_color_balance_lgg(img, **self.params)
