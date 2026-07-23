@@ -1,31 +1,10 @@
-# Blender source (read-only reference)
-blender/
-
-# Python
+venv/
 __pycache__/
-*.py[cod]
-*.so
+*.pyc
+.pytest_cache/
 *.egg-info/
 dist/
-build/
-.pytest_cache/
-*.egg
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
+*.spec
+*.whl
+python-3.12.9-amd64.exe
 .DS_Store
-Thumbs.db
-
-# Temp / artifacts
-nul
-
-# Env
-.env
-venv/
-.venv/

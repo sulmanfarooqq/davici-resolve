@@ -101,8 +101,43 @@ class NodeGraph:
             return last._cached_output
         return None
 
+    def from_dict(self, data: dict):
+        self.nodes.clear()
+        self.edges.clear()
+        for nd in data.get('nodes', []):
+            node = Node(nd['type'], nd.get('label', ''))
+            node.id = nd['id']
+            node.params = nd.get('params', {}).copy()
+            node.bypass = nd.get('bypass', False)
+            node.enabled = nd.get('enabled', True)
+            self.nodes[node.id] = node
+        for edge in data.get('edges', []):
+            self.edges.append(tuple(edge))
+
     def to_dict(self) -> dict:
         return {
             'nodes': [n.to_dict() for n in self.nodes.values()],
             'edges': self.edges,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict, node_classes: Dict[str, type]) -> "NodeGraph":
+        graph = cls()
+        node_map = {}
+        for nd in data.get('nodes', []):
+            ntype = nd.get('type', 'unknown')
+            ncls = node_classes.get(ntype)
+            if ncls is None:
+                continue
+            node = ncls(nd.get('label', ''))
+            node.id = nd.get('id', node.id)
+            node.params = nd.get('params', {})
+            node.bypass = nd.get('bypass', False)
+            node.enabled = nd.get('enabled', True)
+            graph.add_node(node)
+            node_map[nd['id']] = node.id
+        for edge in data.get('edges', []):
+            from_id = node_map.get(edge[0], edge[0])
+            to_id = node_map.get(edge[2], edge[2])
+            graph.connect(from_id, edge[1], to_id, edge[3])
+        return graph

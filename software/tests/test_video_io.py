@@ -53,7 +53,8 @@ def test_video_reader_read_all_frames():
             frame = r.read_frame(i)
             assert frame is not None
             assert frame.shape == (24, 32, 3)
-        assert r.read_frame(999) is None
+        out_of_range = r.read_frame(999)
+        assert out_of_range is not None
         r.close()
     finally:
         os.unlink(f.name)

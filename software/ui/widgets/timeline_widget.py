@@ -1,10 +1,9 @@
-"""Scrollable filmstrip timeline widget with playhead."""
+"""Scrollable filmstrip timeline widget with playhead and playback control."""
 
-from typing import List
-
+from typing import List, Optional
 import numpy as np
 from PySide6.QtWidgets import QWidget, QScrollArea, QHBoxLayout
-from PySide6.QtCore import Qt, Signal, QRectF
+from PySide6.QtCore import Qt, Signal, QRectF, QTimer
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QImage, QPixmap, QMouseEvent
 
 
